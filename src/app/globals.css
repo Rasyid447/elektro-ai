@@ -11,9 +11,26 @@ body {
 
 body {
   background-color: #0a0e17;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(56, 189, 248, 0.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(16, 185, 129, 0.08), transparent 60%);
+  background-attachment: fixed;
   color: #e5ecf7;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.32);
+}
+
+:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+button {
+  cursor: pointer;
 }
 
 /* scrollbar tipis khas aplikasi modern */

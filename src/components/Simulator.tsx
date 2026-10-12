@@ -31,6 +31,14 @@ R2 vout 0 3k
     label: "Induktor & resistor",
     netlist: "Induktor sebagai kawat di DC\nV1 vin 0 DC 5\nL1 vin n1 1m\nR1 n1 0 10\n.op\n.end",
   },
+  {
+    label: "High-pass RC",
+    netlist: "High-pass RC (step 0->5V)\nV1 vin 0 PULSE(0 5 0 1n 1n 50m 100m)\nC1 vin vout 1u\nR1 vout 0 1k\n.tran 0 5m\n.end",
+  },
+  {
+    label: "RL (arus induktif)",
+    netlist: "Respon RL\nV1 vin 0 PULSE(0 5 0 1n 1n 20m 40m)\nR1 vin n1 100\nL1 n1 0 10m\n.tran 0 20m\n.end",
+  },
 ];
 
 function SymbolDiagram({ elements }: { elements: any[] }) {
@@ -178,6 +186,14 @@ function Plot({ traces, selected }: { traces: any; selected: string[] }) {
       ctx.beginPath(); ctx.moveTo(pad.l, Y(0)); ctx.lineTo(pad.l + plotW, Y(0)); ctx.stroke();
     }
 
+    // judul sumbu
+    ctx.fillStyle = "#64748b";
+    ctx.font = "10px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText("Tegangan (V)", pad.l, pad.t - 2);
+    ctx.textAlign = "right";
+    ctx.fillText("Waktu (s)", pad.l + plotW, cssH - 8);
+
     series.forEach((n, i) => {
       const color = COLORS[i % COLORS.length];
       ctx.strokeStyle = color;
@@ -209,7 +225,13 @@ export default function Simulator({
   const [result, setResult] = useState<{ kind: string; data: any } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [tstop, setTstop] = useState("5m");
+  const [tstop, setTstop] = useState("");
+
+  // jalankan otomatis saat panel dibuka dengan sebuah netlist
+  useEffect(() => {
+    if (netlist.trim()) autoRun(netlist);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (netlist && netlist !== text) {
@@ -259,15 +281,16 @@ export default function Simulator({
     try {
       const nl = decorated(parseNetlist(src));
       const ts = parseNetlist(src).analyses.find((a: any) => a.type === "tran");
-      let stop = ts?.tstop;
-      if (tstop) {
-        const m = String(tstop).trim().match(/^([\d.]+)\s*([a-zA-Z]*)$/);
+      let stop = ts?.tstop ?? 1e-3;
+      const manual = String(tstop).trim();
+      if (manual) {
+        const m = manual.match(/^([\d.]+)\s*([a-zA-Z]*)$/);
         if (m) {
-          const suf = { "": 1, k: 1e3, m: 1e-6, u: 1e-6, n: 1e-9, p: 1e-12 } as Record<string, number>;
+          const suf: Record<string, number> = { "": 1, s: 1, k: 1e3, m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12 };
           stop = parseFloat(m[1]) * (suf[m[2].toLowerCase()] ?? 1);
         }
       }
-      const traces = runTransient(nl, { tstop: stop ?? 1e-3, steps: 500 });
+      const traces = runTransient(nl, { tstop: stop, steps: 500 });
       setResult({ kind: "tran", data: traces });
       setSelected((prev) => (prev.length ? prev : traces.nodeVoltages.slice(0, 3)));
       setError(null);
@@ -318,11 +341,15 @@ export default function Simulator({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button onClick={() => runDC()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500">▶ Titik Kerja DC</button>
           <button onClick={() => runTran()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500">📈 Transien</button>
-          <label className="ml-auto flex items-center gap-1 text-[11px] text-slate-400">
-            durasi
+          <label
+            className="ml-auto flex items-center gap-1 text-[11px] text-slate-400"
+            title="Kosongkan untuk memakai .tran pada netlist. Contoh: 5m, 20u, 1"
+          >
+            durasi (opsional)
             <input
               value={tstop}
               onChange={(e) => setTstop(e.target.value)}
+              placeholder="5m"
               className="w-16 rounded border border-slate-700 bg-slate-900 px-1.5 py-1 font-mono text-[11px] text-slate-200 outline-none focus:border-sky-500"
             />
             detik

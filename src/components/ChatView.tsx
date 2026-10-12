@@ -14,7 +14,15 @@ interface Props {
   onStop: () => void;
   onPickMode: (mode: ModeId) => void;
   onSimulate: (netlist: string) => void;
+  onRegenerate: () => void;
 }
+
+const QUICK_EXAMPLES = [
+  "Saya ingin buat alat monitoring suhu ruangan berbasis ESP32, bantu dari awal.",
+  "Buatkan rangkaian filter RC low-pass, lalu simulasi tangga jawabannya.",
+  "Buatkan BOM power supply 12V 2A berbasis buck converter.",
+  "Kenapa transistor saya cepat panas saat menggerakkan motor DC?",
+];
 
 function extractSpice(content: string): string[] {
   const out: string[] = [];
@@ -45,6 +53,26 @@ function SpiceButtons({ content, onSimulate }: { content: string; onSimulate: (n
   );
 }
 
+function CopyTextButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard tidak tersedia */
+        }
+      }}
+      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
+    >
+      {copied ? "✓ Tersalin" : `📋 ${label}`}
+    </button>
+  );
+}
+
 export default function ChatView({
   conversation,
   mode,
@@ -54,6 +82,7 @@ export default function ChatView({
   onStop,
   onPickMode,
   onSimulate,
+  onRegenerate,
 }: Props) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -136,6 +165,23 @@ export default function ChatView({
                 </button>
               ))}
             </div>
+
+            <div className="mt-8">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Atau mulai dari contoh ini
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {QUICK_EXAMPLES.map((ex) => (
+                  <button
+                    key={ex}
+                    onClick={() => onSend(ex)}
+                    className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-left text-xs text-slate-300 transition hover:border-sky-500/60 hover:text-sky-300"
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-5">
@@ -161,6 +207,17 @@ export default function ChatView({
                       <>
                         <MarkdownContent content={msg.content} />
                         <SpiceButtons content={msg.content} onSimulate={onSimulate} />
+                        <div className="mt-2 flex items-center gap-1 border-t border-slate-800/50 pt-1.5">
+                          <CopyTextButton text={msg.content} label="Salin" />
+                          {i === messages.length - 1 && !streaming && (
+                            <button
+                              onClick={onRegenerate}
+                              className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
+                            >
+                              ⟳ Ulangi
+                            </button>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <div className="flex items-center gap-1.5 py-1 text-slate-400">

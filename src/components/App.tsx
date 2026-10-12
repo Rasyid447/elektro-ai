@@ -1,16 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Sidebar, { type Settings } from "./Sidebar";
+import Sidebar from "./Sidebar";
 import ChatView from "./ChatView";
 import Simulator from "./Simulator";
+import Onboarding from "./Onboarding";
 import { buildSystemPrompt } from "@/lib/prompts";
-import type { ChatMessage, Conversation, ModeId } from "@/lib/types";
+import { streamChat } from "@/lib/providers";
+import { DEFAULT_SETTINGS } from "@/lib/types";
+import type { ChatMessage, Conversation, ModeId, Settings } from "@/lib/types";
 
 const CONV_KEY = "elektro-ai:conversations";
 const SETTINGS_KEY = "elektro-ai:settings";
-
-const DEFAULT_SETTINGS: Settings = { apiKey: "", model: "gpt-4o-mini" };
+const ONBOARDED_KEY = "elektro-ai:onboarded";
 
 function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -31,6 +33,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [simOpen, setSimOpen] = useState(false);
   const [simNetlist, setSimNetlist] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -46,8 +50,20 @@ export default function App() {
       }
       const rawSettings = localStorage.getItem(SETTINGS_KEY);
       if (rawSettings) {
-        setSettings({ ...DEFAULT_SETTINGS, ...(JSON.parse(rawSettings) as Settings) });
+        const p = JSON.parse(rawSettings) as Record<string, unknown>;
+        const migrated: Settings = { ...DEFAULT_SETTINGS };
+        // dukung format lama { apiKey, model }
+        if (typeof p.apiKey === "string") migrated.openaiKey = p.apiKey;
+        if (typeof p.model === "string") migrated.openaiModel = p.model;
+        // format baru
+        if (typeof p.provider === "string") migrated.provider = p.provider as Settings["provider"];
+        if (typeof p.openaiKey === "string") migrated.openaiKey = p.openaiKey;
+        if (typeof p.openaiModel === "string") migrated.openaiModel = p.openaiModel;
+        if (typeof p.geminiKey === "string") migrated.geminiKey = p.geminiKey;
+        if (typeof p.geminiModel === "string") migrated.geminiModel = p.geminiModel;
+        setSettings(migrated);
       }
+      if (!localStorage.getItem(ONBOARDED_KEY)) setShowOnboarding(true);
     } catch {
       /* data rusak - mulai bersih */
     }
@@ -132,31 +148,21 @@ export default function App() {
     setStreaming(false);
   };
 
-  const sendMessage = async (text: string) => {
-    if (streaming) return;
-    setError(null);
-
-    const userMsg: ChatMessage = { role: "user", content: text };
+  // inti pengiriman: stream jawaban ke sebuah percakapan (newMessages diakhiri pesan user)
+  const streamReply = async (
+    convId: string,
+    mode: ModeId,
+    newMessages: ChatMessage[],
+    titleText: string | null,
+  ) => {
     const placeholder: ChatMessage = { role: "assistant", content: "" };
 
-    let convId = activeId;
-    let history: ChatMessage[] = activeConversation?.messages ?? [];
-
-    if (!convId) {
-      convId = createConversation(activeMode);
-      history = [];
-    }
-
-    const mode = conversations.find((c) => c.id === convId)?.mode ?? activeMode;
-    const newMessages = [...history, userMsg];
-
-    // tambahkan pesan user + placeholder assistant
     setConversations((prev) =>
       prev.map((c) =>
         c.id === convId
           ? {
               ...c,
-              title: c.messages.length === 0 ? titleFrom(text) : c.title,
+              title: titleText && c.messages.length === 0 ? titleFrom(titleText) : c.title,
               messages: [...newMessages, placeholder],
               updatedAt: Date.now(),
             }
@@ -168,6 +174,7 @@ export default function App() {
     const controller = new AbortController();
     abortRef.current = controller;
     setStreaming(true);
+    setError(null);
 
     const updateAssistant = (content: string) => {
       setConversations((prev) =>
@@ -175,85 +182,41 @@ export default function App() {
           if (c.id !== convId) return c;
           const msgs = [...c.messages];
           const last = msgs[msgs.length - 1];
-          if (last?.role === "assistant") {
-            msgs[msgs.length - 1] = { ...last, content };
-          }
+          if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, content };
           return { ...c, messages: msgs, updatedAt: Date.now() };
         }),
       );
     };
 
     try {
-      if (!settings.apiKey.trim()) {
+      const activeKey = settings.provider === "gemini" ? settings.geminiKey : settings.openaiKey;
+      const activeModel =
+        settings.provider === "gemini" ? settings.geminiModel : settings.openaiModel;
+
+      if (!activeKey.trim()) {
         throw new Error(
-          "API key OpenAI belum diisi. Buka menu ⚙️ Pengaturan di sidebar, tempel key (sk-...), lalu Simpan.",
+          settings.provider === "gemini"
+            ? "API key Gemini belum diisi. Buka ⚙️ Pengaturan AI, pilih Gemini, tempel key (AIza...), lalu Simpan."
+            : "API key OpenAI belum diisi. Buka ⚙️ Pengaturan AI, pilih OpenAI, tempel key (sk-...), lalu Simpan.",
         );
       }
 
-      const bodyMessages = [
-        { role: "system", content: buildSystemPrompt(mode) },
-        ...newMessages.map((m) => ({ role: m.role, content: m.content })),
-      ];
-
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${settings.apiKey.trim()}`,
-        },
+      const acc = await streamChat({
+        provider: settings.provider,
+        apiKey: activeKey,
+        model: activeModel,
+        system: buildSystemPrompt(mode),
+        messages: newMessages,
+        temperature: 0.4,
         signal: controller.signal,
-        body: JSON.stringify({
-          model: settings.model,
-          stream: true,
-          temperature: 0.4,
-          messages: bodyMessages,
-        }),
+        onText: updateAssistant,
       });
-
-      if (!res.ok || !res.body) {
-        let msg = `Permintaan gagal (HTTP ${res.status}).`;
-        const data = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        if (data?.error?.message) msg = data.error.message;
-        if (res.status === 401) msg += " Periksa kembali API key di menu Pengaturan.";
-        if (res.status === 429) msg += " Kuota/billing habis atau terlalu banyak permintaan.";
-        throw new Error(msg);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let acc = "";
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n");
-        buffer = parts.pop() ?? "";
-        for (const rawLine of parts) {
-          const line = rawLine.trim();
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (payload === "[DONE]") continue;
-          try {
-            const json = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (delta) {
-              acc += delta;
-              updateAssistant(acc);
-            }
-          } catch {
-            /* potongan JSON belum lengkap - abaikan */
-          }
-        }
-      }
 
       if (!acc.trim()) {
         updateAssistant("_Model tidak mengembalikan jawaban. Coba ulangi permintaan._");
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // dihentikan pengguna
         setConversations((prev) =>
           prev.map((c) => {
             if (c.id !== convId) return c;
@@ -268,7 +231,6 @@ export default function App() {
       } else {
         const msg = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga.";
         setError(msg);
-        // hapus bubble assistant kosong agar rapi
         setConversations((prev) =>
           prev.map((c) => {
             if (c.id !== convId) return c;
@@ -283,6 +245,47 @@ export default function App() {
       abortRef.current = null;
       setStreaming(false);
     }
+  };
+
+  const sendMessage = async (text: string) => {
+    if (streaming) return;
+    const userMsg: ChatMessage = { role: "user", content: text };
+
+    let convId = activeId;
+    let history: ChatMessage[] = activeConversation?.messages ?? [];
+
+    if (!convId) {
+      convId = createConversation(activeMode);
+      history = [];
+    }
+
+    const mode = conversations.find((c) => c.id === convId)?.mode ?? activeMode;
+    await streamReply(convId, mode, [...history, userMsg], text);
+  };
+
+  const handleRegenerate = async () => {
+    if (streaming || !activeConversation) return;
+    const trimmed = [...activeConversation.messages];
+    while (trimmed.length && trimmed[trimmed.length - 1].role === "assistant") trimmed.pop();
+    if (!trimmed.length || trimmed[trimmed.length - 1].role !== "user") return;
+    await streamReply(activeConversation.id, activeConversation.mode, trimmed, null);
+  };
+
+  const handleOnboardingDone = () => {
+    setShowOnboarding(false);
+    try {
+      localStorage.setItem(ONBOARDED_KEY, "1");
+    } catch {
+      /* abaikan */
+    }
+  };
+
+  const handleOpenGuide = () => setShowOnboarding(true);
+
+  const handleOpenSettingsFromGuide = () => {
+    setShowOnboarding(false);
+    setSettingsOpen(true);
+    setSidebarOpen(true);
   };
 
   return (
@@ -304,11 +307,14 @@ export default function App() {
           activeId={activeId}
           activeMode={activeMode}
           settings={settings}
+          settingsOpen={settingsOpen}
           onSelectConversation={handleSelectConversation}
           onDeleteConversation={handleDeleteConversation}
           onNewChat={handleNewChat}
           onSelectMode={handleSelectMode}
           onSaveSettings={handleSaveSettings}
+          onOpenGuide={handleOpenGuide}
+          onToggleSettings={() => setSettingsOpen((s) => !s)}
         />
       </div>
 
@@ -342,6 +348,7 @@ export default function App() {
           onStop={stopStreaming}
           onPickMode={handlePickMode}
           onSimulate={handleSimulate}
+          onRegenerate={handleRegenerate}
         />
         {simOpen && (
           <Simulator
@@ -351,6 +358,12 @@ export default function App() {
           />
         )}
       </div>
+
+      <Onboarding
+        open={showOnboarding}
+        onClose={handleOnboardingDone}
+        onOpenSettings={handleOpenSettingsFromGuide}
+      />
     </div>
   );
 }

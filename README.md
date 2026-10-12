@@ -10,13 +10,20 @@ perhatian pada level logika 3.3V/5V, dekoupling, keselamatan listrik, ketersedia
 
 ## 🚀 Cara menjalankan
 
-### 1. Siapkan API key OpenAI
-1. Buka <https://platform.openai.com/api-keys> dan login.
-2. Klik **Create new secret key**, salin key-nya (format `sk-...`).
-   - Butuh saldo di platform OpenAI (pemakaian model `gpt-4o-mini` sangat murah untuk percakapan normal).
+### 1. Siapkan API key (pilih salah satu)
 
-> Alternatif gratis untuk coba-coba: ganti isi file `src/app/api/chat/route.ts` agar mendukung
-> provider lain (mis. Google Gemini), atau gunakan endpoint kompatibel OpenAI lain yang Anda miliki.
+**Opsi A — Google Gemini (GRATIS, disarankan untuk mahasiswa):**
+1. Buka <https://aistudio.google.com> dan login dengan akun Google.
+2. Klik **Get API key** → **Create API key** → salin (format `AIza...`).
+3. Di web: menu **⚙️ Pengaturan AI** → pilih **Gemini (Gratis)** → tempel key → **Tes koneksi** → **Simpan**.
+
+**Opsi B — OpenAI (kualitas jawaban teknis paling kuat, berbayar):**
+1. Buka <https://platform.openai.com/api-keys> → **Create new secret key** → salin (`sk-...`).
+2. Butuh saldo; model `gpt-4o-mini` sangat murah untuk percakapan normal.
+3. Di web: **⚙️ Pengaturan AI** → pilih **OpenAI** → tempel key → **Tes koneksi** → **Simpan**.
+
+> Kedua penyedia dipanggil langsung dari browser Anda (tanpa server), jadi web ini bisa
+> di-hosting statis gratis. Key hanya disimpan di localStorage browser Anda sendiri.
 
 ### 2. Jalankan aplikasi
 
@@ -27,12 +34,11 @@ npm run dev
 
 Buka browser: **<http://localhost:3000**
 
-### 3. Masukkan API key
-Klik **⚙️ Pengaturan API** di sidebar → tempel API key → **Simpan pengaturan**.
-Key disimpan di browser Anda (localStorage) dan dikirim langsung ke server lokal — tidak dikirim ke pihak lain.
+### 3. Masukkan API key di web
+Klik **⚙️ Pengaturan AI** di sidebar → pilih penyedia (Gemini gratis / OpenAI) → tempel key → **Tes koneksi** → **Simpan**.
+Key hanya disimpan di browser Anda (localStorage) dan dikirim langsung ke penyedia AI.
 
-> Opsional: salin `.env.local.example` menjadi `.env.local` lalu isi `OPENAI_API_KEY`
-> jika ingin key disimpan di server, bukan di browser.
+> Karena tidak ada backend, web ini murni statis — cocok untuk GitHub Pages / Cloudflare Pages.
 
 ---
 
@@ -72,57 +78,64 @@ C1 vout 0 1u
 
 ## ✨ Fitur lain
 
+- **Dua penyedia AI**: OpenAI (GPT) & Google Gemini (gratis) — ganti lewat menu Pengaturan, lengkap dengan tombol **Tes koneksi**
+- **Panduan singkat (onboarding)** untuk pemula saat pertama membuka web
 - Jawaban *streaming* (muncul bertahap seperti ChatGPT) dan bisa dihentikan kapan saja
+- Tombol **⟳ Ulangi** untuk memunculkan ulang jawaban, dan **📋 Salin** di tiap balasan
+- Contoh pertanyaan sekali klik di layar sambutan
 - Render Markdown: tabel, daftar, highlight kode, tombol **Salin** di setiap blok kode
 - Riwayat percakapan tersimpan otomatis di browser (localStorage)
-- Bisa memilih/mengganti model GPT (`gpt-4o-mini`, `gpt-4o`, `gpt-4.1`, atau ketik manual)
+- **PWA**: bisa di-install sebagai aplikasi di HP/desktop (Add to Home Screen)
 - Tampilan responsif: sidebar jadi laci menu di layar HP
 
 ## 📁 Struktur proyek
 
 ```
 elektro-ai/
+├── public/
+│   ├── manifest.json           ← PWA (bisa di-install di HP)
+│   └── icon.svg
 ├── src/
 │   ├── app/
-│   │   ├── api/chat/route.ts   ← backend: streaming ke OpenAI
-│   │   ├── layout.tsx
+│   │   ├── layout.tsx          ← metadata + PWA
 │   │   ├── page.tsx
 │   │   └── globals.css
 │   ├── components/
-│   │   ├── App.tsx             ← state utama + penyimpanan riwayat + panel simulator
-│   │   ├── Sidebar.tsx         ← mode, riwayat, pengaturan API
-│   │   ├── ChatView.tsx        ← tampilan chat, input, tombol "Simulasikan"
-│   │   ├── Simulator.tsx       ← editor netlist, diagram, tabel hasil, grafik
+│   │   ├── App.tsx             ← state utama + riwayat + simulator
+│   │   ├── Sidebar.tsx         ← mode, riwayat, pengaturan AI (OpenAI/Gemini)
+│   │   ├── ChatView.tsx        ← chat, tombol Simulasikan / Ulangi / Salin
+│   │   ├── Simulator.tsx       ← editor netlist, diagram, tabel, grafik
+│   │   ├── Onboarding.tsx      ← panduan singkat untuk pemula
 │   │   └── MarkdownContent.tsx ← render markdown + highlight kode
 │   └── lib/
 │       ├── prompts.ts          ← system prompt ahli elektronika + 5 mode
+│       ├── providers.ts        ← lapisan AI: OpenAI & Gemini (streaming)
 │       ├── spice.js            ← mesin simulator SPICE (parser + solver MNA)
 │       └── types.ts
-├── .env.local.example
 └── package.json
 ```
 
 ## 🔧 Perintah berguna
 
 ```powershell
-npm run dev     # server pengembangan (http://localhost:3000)
-npm run build   # versi produksi
-npm start       # jalankan versi produksi
+npm run dev     # server pengembangan lokal (http://localhost:3000)
+npm run build   # ekspor situs statis ke folder out/
 ```
 
 ## 🌐 Cara upload ke internet (deploy)
 
-Web ini memakai backend kecil (`/api/chat`) untuk menelepon OpenAI, jadi butuh hosting yang
-mendukung Next.js. Cara termudah & gratis (tanpa perlu git):
+Karena web ini **murni statis** (AI dipanggil langsung dari browser), isi folder hasil build
+(`out/`) bisa di-hosting gratis di banyak layanan:
 
-**Vercel (disarankan):**
-1. Buka Terminal di folder project, jalankan: `npx vercel`
-2. Ikuti petunjuk → login lewat browser (buat akun gratis) → jawab *Yes* untuk pertanyaan awal.
-3. Setelah selesai, jalankan `npx vercel --prod` → Anda dapat alamat publik, mis. `https://elektro-ai-xxx.vercel.app`.
-4. Buka alamat itu di browser mana pun, lalu masukkan API key OpenAI di menu **⚙️ Pengaturan API**.
+**Netlify (paling mudah — tinggal seret & lepas):**
+1. `npm run build`
+2. Buka <https://app.netlify.com/drop> → seret folder `out/` ke halaman itu → langsung dapat link publik.
 
-**Alternatif:** Netlify (`npx netlify-cli deploy --build --prod`) atau, bila ingin gratis tanpa
-server, ubah ke mode statis lalu host di GitHub Pages/Cloudflare Pages.
+**GitHub Pages:**
+1. `npm run build` (untuk project page, tambahkan env `NEXT_PUBLIC_BASE_PATH=/<nama-repo>`).
+2. Unggah isi `out/` ke cabang `gh-pages`, lalu **Settings → Pages → Deploy from a branch** → `gh-pages` / root.
+
+**Cloudflare Pages / Vercel:** buat project → build command `npm run build` → output directory `out`.
 
 > Setelah online, API key tetap hanya disimpan di browser pengguna masing-masing — jangan dibagikan.
 
