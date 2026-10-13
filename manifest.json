@@ -1,0 +1,26 @@
+{
+  "name": "ElektroAI — Asisten Rancang Alat Elektronika",
+  "short_name": "ElektroAI",
+  "description": "Web AI untuk merancang, mensimulasikan, dan membangun alat elektronika: chat ahli elektronika + simulator rangkaian DC & transient.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0e17",
+  "theme_color": "#0a0e17",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
